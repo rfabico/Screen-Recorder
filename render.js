@@ -1,19 +1,17 @@
-const { desktopCapturer, ipcRenderer } = require('electron');
+console.log('👋 This message is being logged by "renderer.js", included via webpack');
 
+const { ipcRenderer } = require('electron');
 const { writeFile } = require('fs');
 
-
-// Global state
-let mediaRecorder; // MediaRecorder instance to capture footage
-const recordedChunks = [];
+let mediaRecorder;
+let recordedChunks = [];
 
 // Buttons
 const videoElement = document.querySelector('video');
 
 const startBtn = document.getElementById('startBtn');
 startBtn.onclick = e => {
-  mediaRecorder.start();
-  startBtn.classList.add('is-danger');
+  startRecording();
   startBtn.innerText = 'Recording';
 };
 
@@ -21,103 +19,83 @@ const stopBtn = document.getElementById('stopBtn');
 
 stopBtn.onclick = e => {
   mediaRecorder.stop();
-  startBtn.classList.remove('is-danger');
   startBtn.innerText = 'Start';
 };
 
 const videoSelectBtn = document.getElementById('videoSelectBtn');
-videoSelectBtn.addEventListener('click', getVideoSources);
+videoSelectBtn.onclick = getVideoSources;
 
-// Get the available video sources
+const selectMenu = document.getElementById('selectMenu')
+
 async function getVideoSources() {
-
-  const sources = await desktopCapturer.getSources({
-    types:['screen'],
-    thumbnailSize: {width:maxWidth, height:maxHeight},
-  });
-  return sources.map(source => source.thumbnail)
-    /*desktopCapturer.getSources({ types: ['window', 'screen'] })
-        .then(async inputSources => {
-            const sources = inputSources.map(source => ({ name: source.name, id: source.id }));
-            // Send sources to main process via ipcRenderer
-            return ipcRenderer.invoke('electron-menu', sources);
-        })
-        .catch(error => {
-            console.error('Error getting video sources:', error);
-        });*/
-}
-
-ipcRenderer.on('menuselect', (event, source) => {
-    selectSource(source)
-})
-// Change the videoSource window to record
-async function selectSource(source) {
-
-  videoSelectBtn.innerText = source.name;
-
-  const constraints = {
-    audio: false,
-    video: {
-      mandatory: {
-        chromeMediaSource: 'desktop',
-        chromeMediaSourceId: source.id
-      }
-    }
-  };
-
-  // Create a Stream
-  const stream = await navigator.mediaDevices
-    .getUserMedia(constraints);
-
-  // Preview the source in a video element
-  videoElement.srcObject = stream;
-  videoElement.play();
-
-  // Create the Media Recorder
-  const options = { mimeType: 'video/webm; codecs=vp9' };
-  mediaRecorder = new MediaRecorder(stream, options);
-
-  // Register Event Handlers
-  mediaRecorder.ondataavailable = handleDataAvailable;
-  mediaRecorder.onstop = handleStop;
-
-  // Updates the UI
-}
-
-// Captures all recorded chunks
-function handleDataAvailable(e) {
-  console.log('video data available');
-  recordedChunks.push(e.data);
-}
-
-// Saves the video file on stop
-async function handleStop(e) {
-  const blob = new Blob(recordedChunks, {
-    type: 'video/webm; codecs=vp9'
-  });
-
-  const buffer = Buffer.from(await blob.arrayBuffer());
-
-  const filePath = await ipcRenderer.invoke('electron-dialog', 
-    {'defaultPath': `myvid-${Date.now()}.webm`, 'buttonLabel': 'Save recorded video'}
-  );
-
-  if (filePath) {
-    writeFile(filePath, buffer, () => console.log('video saved successfully!'));
+    const inputSources = await ipcRenderer.invoke('getSources')
+    console.log(inputSources);
+    inputSources.forEach(source => {
+      const element = document.createElement("option")
+      element.value = source.id
+      element.innerHTML = source.name
+      selectMenu.appendChild(element)
+    });
   }
 
+
+  async function startRecording() {
+    const screenId = selectMenu.options[selectMenu.selectedIndex].value
+    
+    // AUDIO WONT WORK ON MACOS
+    const IS_MACOS = await ipcRenderer.invoke("getOperatingSystem") === 'darwin'
+    console.log(await ipcRenderer.invoke('getOperatingSystem'))
+    const audio = !IS_MACOS ? {
+      mandatory: {
+        chromeMediaSource: 'desktop'
+      }
+    } : false
+  
+    const constraints = {
+      audio,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: screenId
+        }
+      }
+    };
+  
+    // Create a Stream
+    const stream = await navigator.mediaDevices
+      .getUserMedia(constraints);
+  
+    // Preview the source in a video element
+    videoElement.srcObject = stream;
+    await videoElement.play();
+  
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+    mediaRecorder.ondataavailable = onDataAvailable;
+    mediaRecorder.onstop = stopRecording;
+    mediaRecorder.start();
+  }
+
+function onDataAvailable(e) {
+    recordedChunks.push(e.data);
 }
 
 
+async function stopRecording() {
+    videoElement.srcObject = null
 
-/*// In the renderer process
-const { ipcRenderer } = require('electron');
-function sendCaptureAreaInfo(captureArea, windowId) {
-  ipcRenderer.send('capture-area-info', { captureArea, windowId });
-}
-// In the main process
-const { ipcMain } = require('electron');
-ipcMain.on('capture-area-info', (event, { captureArea, windowId }) => {
-  // Image processing based on capture area and window ID is performed here.
-});*/
-//Upon user selection of a capture area, the area information along with the ID of the capture window is sent to the main process. The main process uses this information to process the image of the selected area and perform necessary actions (e.g., image saving, OCR processing).
+    const blob = new Blob(recordedChunks, {
+      type: 'video/webm; codecs=vp9'
+    });
+  
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    recordedChunks = []
+
+    const { canceled, filePath } =  await ipcRenderer.invoke('showSaveDialog')
+    if(canceled) return
+  
+    if (filePath) {
+      writeFile(filePath, buffer, () => console.log('video saved successfully!'));
+    }
+  }
+
+  //TODO: Fix audio recording issues (multiple & repeating); choose sources tends to repeat sources (Fix source name as well)

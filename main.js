@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, Menu, MenuItem, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, MenuItem, dialog, desktopCapturer } = require('electron');
 const path = require('path');
 
+let mainWindow;
 
 const createWindow = () => {
     // Create the browser window.
@@ -43,21 +44,17 @@ const createWindow = () => {
     }
   });
 
-  ipcMain.handle('electron-menu', async (event, sources) => {
-    const videoOptionsMenu = new Menu();
-    sources.forEach(source => {
-          videoOptionsMenu.append(new MenuItem({ 
-              label: source.name, 
-              click: () => event.sender.send('menuselect', source)
-          }));
-      });
-    videoOptionsMenu.popup();
+  ipcMain.handle('getSources', async () => {
+    return await desktopCapturer.getSources({ types: ['window', 'screen'] })
   })
   
-  ipcMain.handle('electron-dialog', async (event, settings) => {
-    const { filePath } = await dialog.showSaveDialog({
-      buttonLabel: settings.buttonLabel,
-      defaultPath: settings.defaultPath
+  ipcMain.handle('showSaveDialog', async () => {
+    return await dialog.showSaveDialog({
+      buttonLabel: 'Save video',
+      defaultPath: `vid-${Date.now()}.webm`
     });
-    return filePath;
+  })
+  
+  ipcMain.handle('getOperatingSystem', () => {
+    return process.platform
   })
