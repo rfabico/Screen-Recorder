@@ -28,8 +28,11 @@ videoSelectBtn.onclick = getVideoSources;
 const selectMenu = document.getElementById('selectMenu')
 
 async function getVideoSources() {
+  //clear select menu if invoked to prevent appending to an existing list
+    selectMenu.innerHTML = '';
     const inputSources = await ipcRenderer.invoke('getSources')
     console.log(inputSources);
+
     inputSources.forEach(source => {
       const element = document.createElement("option")
       element.value = source.id
@@ -52,11 +55,12 @@ async function getVideoSources() {
     } : false
   
     const constraints = {
+      //adjust constraints here
       audio,
       video: {
         mandatory: {
           chromeMediaSource: 'desktop',
-          chromeMediaSourceId: screenId
+          chromeMediaSourceId: screenId,
         }
       }
     };
@@ -67,6 +71,8 @@ async function getVideoSources() {
   
     // Preview the source in a video element
     videoElement.srcObject = stream;
+    //Fix audio recording issues (multiple & repeating) - muted works
+    videoElement.muted = true;
     await videoElement.play();
   
     mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
@@ -98,4 +104,4 @@ async function stopRecording() {
     }
   }
 
-  //TODO: Fix audio recording issues (multiple & repeating); choose sources tends to repeat sources (Fix source name as well)
+  //TODO: pick quality, preview on source selection?, microphone capture? 
